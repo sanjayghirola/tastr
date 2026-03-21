@@ -1,0 +1,25 @@
+{
+  "name": "tastr",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "dev:backend": "turbo run dev --filter=@tastr/backend",
+    "dev:customer": "turbo run dev --filter=@tastr/web-customer",
+    "dev:admin": "turbo run dev --filter=@tastr/web-admin",
+    "dev:restaurant": "turbo run dev --filter=@tastr/web-restaurant"
+  },
+  "devDependencies": {
+    "turbo": "^1.13.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
