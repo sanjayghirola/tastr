@@ -13,11 +13,11 @@ export default defineConfig({
     port: 3002,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'https://api.tastr.in',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:8000',
+        target: 'https://api.tastr.in',
         changeOrigin: true,
         ws: true,
       },
