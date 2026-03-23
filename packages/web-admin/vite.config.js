@@ -13,11 +13,11 @@ export default defineConfig({
     port: 3002,
     proxy: {
       '/api': {
-        target: 'https://api.tastr.in',
+        target: 'http://api.theeazy.io',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'https://api.tastr.in',
+        target: 'http://api.theeazy.io',
         changeOrigin: true,
         ws: true,
       },
