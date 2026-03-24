@@ -11,7 +11,7 @@
 import { Router } from 'express';
 
 // Controllers
-import { getPricingConfig, updatePricingConfig } from '../controllers/platformConfigController.js';
+import { getPricingConfig, updatePricingConfig, getDeliveryConfig, updateDeliveryConfig } from '../controllers/platformConfigController.js';
 import { getActiveAgreement, acceptAgreement, createAgreement, listAcceptances } from '../controllers/agreementController.js';
 import { getRevenueStreams, getSettlementSummary, getRestaurantCommissionReport } from '../controllers/revenueReportController.js';
 import { triggerSettlement } from '../jobs/weeklySettlement.js';
@@ -26,6 +26,10 @@ const router = Router();
 // ─── Platform Pricing & Commission ──────────────────────────────────────────
 router.get ('/admin/platform-config/pricing', /* adminAuth, */ getPricingConfig);
 router.put ('/admin/platform-config/pricing', /* adminAuth, */ updatePricingConfig);
+
+// ─── Delivery Pricing ────────────────────────────────────────────────────────
+router.get ('/admin/platform-config/delivery', /* adminAuth, */ getDeliveryConfig);
+router.put ('/admin/platform-config/delivery', /* adminAuth, */ updateDeliveryConfig);
 
 // ─── Agreements (admin management) ──────────────────────────────────────────
 router.post('/admin/agreements',                   /* adminAuth, */ createAgreement);

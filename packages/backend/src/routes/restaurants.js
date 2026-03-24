@@ -87,6 +87,14 @@ router.put(
   restaurantsController.updateDeliverySettings,
 );
 
+// PUT /api/restaurants/me/delivery  (alias used by restaurant portal)
+router.put(
+  '/me/delivery',
+  verifyToken,
+  requireRole(ROLES.RESTAURANT_OWNER),
+  restaurantsController.updateDeliverySettings,
+);
+
 // GET/PUT /api/restaurants/me/kitchen-settings
 router.get(
   '/me/kitchen-settings',

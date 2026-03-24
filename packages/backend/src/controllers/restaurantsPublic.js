@@ -134,3 +134,92 @@ export async function toggleOnline(req, res, next) {
     res.json({ success: true, isOnline: restaurant.isOnline });
   } catch (err) { next(err); }
 }
+
+// ─── GET /api/restaurants/:id/delivery-check ─────────────────────────────────
+export async function deliveryCheck(req, res, next) {
+  try {
+    const restaurant = await Restaurant.findById(req.params.id)
+      .select('address deliveryRadiusKm deliveryFee minOrderAmount expressDeliveryEnabled expressDeliveryExtraFee scheduledOrdersEnabled scheduledAdvanceHours deliveryTiers tastrPlusFreeDelivery deliveryMode')
+      .lean();
+    if (!restaurant) return res.status(404).json({ success: false, message: 'Restaurant not found' });
+
+    const userLat = parseFloat(req.query.lat);
+    const userLng = parseFloat(req.query.lng);
+
+    let distanceKm = null;
+    let withinRadius = true;
+
+    if (restaurant.address?.lat && userLat && userLng) {
+      distanceKm = haversineKm(userLat, userLng, restaurant.address.lat, restaurant.address.lng);
+      distanceKm = Math.round(distanceKm * 10) / 10;
+      withinRadius = distanceKm <= (restaurant.deliveryRadiusKm || 999);
+    }
+
+    // Calculate delivery fee using PLATFORM pricing engine (distance tiers, surge, express)
+    let deliveryFee = restaurant.deliveryFee || 0;
+    let platformDeliveryResult = null;
+    try {
+      const { calculateDeliveryFee } = await import('../utils/pricingEngine.js');
+      platformDeliveryResult = await calculateDeliveryFee({
+        restaurantAddress: restaurant.address,
+        deliveryAddress: { lat: userLat, lng: userLng },
+        restaurantFee: restaurant.deliveryFee || 0,
+        deliveryMethod: req.query.deliveryMethod || 'standard',
+        subtotal: parseInt(req.query.subtotal) || 0,
+      });
+      deliveryFee = platformDeliveryResult.deliveryFee;
+    } catch {
+      // Fallback to restaurant-level tiers if platform engine fails
+      if (restaurant.deliveryTiers?.length > 0 && distanceKm !== null) {
+        const tier = restaurant.deliveryTiers.find(t => distanceKm >= t.minKm && distanceKm <= t.maxKm);
+        if (tier) deliveryFee = tier.feePence;
+      }
+    }
+
+    // Also compute service fee and markup for the checkout to display
+    let serviceFee = 0;
+    let markupInfo = null;
+    try {
+      const { calculatePricing } = await import('../utils/pricingEngine.js');
+      const subtotal = parseInt(req.query.subtotal) || 0;
+      if (subtotal > 0) {
+        const pricing = await calculatePricing({
+          itemsSubtotal: subtotal,
+          deliveryFee,
+          deliveryModel: restaurant.deliveryMode || 'tastr',
+          restaurantId: restaurant._id,
+          itemCount: parseInt(req.query.itemCount) || 1,
+        });
+        serviceFee = pricing.serviceFeeAmount;
+        markupInfo = {
+          amount: pricing.markupAmount,
+          type: pricing.markupType,
+          value: pricing.markupValue,
+          displaySubtotal: pricing.displaySubtotal,
+        };
+      }
+    } catch {}
+
+    res.json({
+      success: true,
+      withinRadius,
+      distanceKm,
+      deliveryRadiusKm: restaurant.deliveryRadiusKm || 5,
+      deliveryFee,
+      serviceFee,
+      markup: markupInfo,
+      minOrderAmount: restaurant.minOrderAmount || 0,
+      expressDeliveryEnabled: !!restaurant.expressDeliveryEnabled,
+      expressDeliveryExtraFee: restaurant.expressDeliveryExtraFee || 200,
+      scheduledOrdersEnabled: !!restaurant.scheduledOrdersEnabled,
+      scheduledAdvanceHours: restaurant.scheduledAdvanceHours || 24,
+      tastrPlusFreeDelivery: !!restaurant.tastrPlusFreeDelivery,
+      deliveryMode: restaurant.deliveryMode || 'tastr',
+      // Platform delivery details
+      freeDelivery: platformDeliveryResult?.freeDelivery || false,
+      surgeApplied: platformDeliveryResult?.surgeApplied || false,
+      surgeMultiplier: platformDeliveryResult?.surgeMultiplier || 1,
+      tierUsed: platformDeliveryResult?.tierUsed || null,
+    });
+  } catch (err) { next(err); }
+}

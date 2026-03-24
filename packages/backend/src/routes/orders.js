@@ -85,7 +85,7 @@ router.patch('/:id/reject',
 
 router.patch('/:id/status',
   verifyToken,
-  requireRole(ROLES.RESTAURANT_OWNER, ROLES.RESTAURANT_STAFF, ROLES.SUPER_ADMIN, ROLES.SUB_ADMIN),
+  requireRole(ROLES.RESTAURANT_OWNER, ROLES.RESTAURANT_STAFF, ROLES.DRIVER, ROLES.SUPER_ADMIN, ROLES.SUB_ADMIN),
   [param('id').isMongoId(), body('status').notEmpty()],
   validate,
   ctrl.updateOrderStatus,
@@ -119,6 +119,24 @@ router.patch('/:id/cancel',
   [param('id').isMongoId(), body('reason').optional().isString()],
   validate,
   ctrl.cancelOrder,
+);
+
+// ─── Driver: verify pickup PIN at restaurant ─────────────────────────────────
+router.post('/:id/verify-pickup',
+  verifyToken,
+  requireRole(ROLES.DRIVER),
+  [param('id').isMongoId(), body('pin').notEmpty().isLength({ min: 4, max: 4 })],
+  validate,
+  ctrl.verifyPickupPin,
+);
+
+// ─── Driver: verify delivery OTP from customer ──────────────────────────────
+router.post('/:id/verify-delivery',
+  verifyToken,
+  requireRole(ROLES.DRIVER),
+  [param('id').isMongoId(), body('otp').notEmpty().isLength({ min: 4, max: 4 })],
+  validate,
+  ctrl.verifyDeliveryOtp,
 );
 
 // ─── Rate order (triggers review) ────────────────────────────────────────────

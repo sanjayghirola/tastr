@@ -1,5 +1,6 @@
 import ChatMessage from '../models/ChatMessage.js';
 import Order from '../models/Order.js';
+import Driver from '../models/Driver.js';
 
 export async function getChatHistory(req, res, next) {
   try {
@@ -10,9 +11,15 @@ export async function getChatHistory(req, res, next) {
     const order = await Order.findById(orderId).lean();
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    const isCustomer  = order.customerId?.toString() === userId;
-    const isDriver    = order.driverId?.toString()   === userId;
-    const isAdmin     = req.user.role === 'admin';
+    const isCustomer = order.customerId?.toString() === userId;
+    const isAdmin    = ['SUPER_ADMIN', 'SUB_ADMIN'].includes(req.user.role);
+
+    // Driver check: resolve User._id → Driver._id
+    let isDriver = false;
+    if (req.user.role === 'DRIVER' && order.driverId) {
+      const driverDoc = await Driver.findOne({ userId: req.user._id }).select('_id').lean();
+      isDriver = driverDoc && order.driverId.toString() === driverDoc._id.toString();
+    }
 
     if (!isCustomer && !isDriver && !isAdmin) {
       return res.status(403).json({ message: 'Access denied' });

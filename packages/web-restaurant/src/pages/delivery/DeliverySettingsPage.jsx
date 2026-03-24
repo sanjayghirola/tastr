@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Toggle, Button, Input } from '../../components/global/index.jsx'
 import api from '../../services/api.js'
+import loadGoogleMaps from '../../utils/loadGoogleMaps.js'
 
 const TABS = ['Model', 'Radius', 'Fees', 'Methods', 'Tastr+', 'Schedule']
 
@@ -77,6 +78,59 @@ function ModelTab({ settings, onChange }) {
 // ─── Radius Tab ───────────────────────────────────────────────────────────────
 function RadiusTab({ settings, onChange }) {
   const radiusKm = settings.deliveryRadiusKm || 5
+  const mapContainerRef = useRef(null)
+  const mapInstanceRef  = useRef(null)
+  const circleRef       = useRef(null)
+  const markerRef       = useRef(null)
+  const [mapReady, setMapReady] = useState(false)
+
+  // Load Google Maps & init
+  useEffect(() => {
+    loadGoogleMaps('places').then(loaded => {
+      if (loaded && mapContainerRef.current && !mapInstanceRef.current) {
+        const lat = settings.location?.coordinates?.[1] || settings.lat || 51.505
+        const lng = settings.location?.coordinates?.[0] || settings.lng || -0.09
+        const center = { lat, lng }
+
+        mapInstanceRef.current = new window.google.maps.Map(mapContainerRef.current, {
+          center,
+          zoom: 13,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        })
+
+        markerRef.current = new window.google.maps.Marker({
+          position: center,
+          map: mapInstanceRef.current,
+          title: 'Restaurant location',
+        })
+
+        circleRef.current = new window.google.maps.Circle({
+          map: mapInstanceRef.current,
+          center,
+          radius: radiusKm * 1000,
+          fillColor: '#C18B3C',
+          fillOpacity: 0.15,
+          strokeColor: '#C18B3C',
+          strokeWeight: 2,
+        })
+
+        setMapReady(true)
+      }
+    })
+  }, [])
+
+  // Update circle radius when slider changes
+  useEffect(() => {
+    if (circleRef.current) {
+      circleRef.current.setRadius(radiusKm * 1000)
+    }
+    // Auto-fit map zoom to circle bounds
+    if (mapInstanceRef.current && circleRef.current) {
+      mapInstanceRef.current.fitBounds(circleRef.current.getBounds())
+    }
+  }, [radiusKm, mapReady])
 
   return (
     <div className="space-y-5">
@@ -84,19 +138,28 @@ function RadiusTab({ settings, onChange }) {
         <p className="text-sm font-bold text-text-primary mb-1">Delivery Radius</p>
         <p className="text-xs text-text-muted mb-4">Set how far you deliver from your restaurant location</p>
 
-        {/* Map placeholder - Google Maps RadiusMapPicker */}
-        <div className="w-full h-48 rounded-xl bg-brand-50 border-2 border-dashed border-brand-200 flex flex-col items-center justify-center mb-4 relative overflow-hidden">
-          <div className="text-4xl mb-2">🗺</div>
-          <p className="text-sm text-text-muted text-center">Google Maps radius picker</p>
-          <p className="text-xs text-text-muted">Requires VITE_GOOGLE_MAPS_KEY</p>
-          {/* Circle indicator */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div
-              className="rounded-full border-2 border-brand-500 bg-brand-500/10 transition-all duration-300"
-              style={{ width: `${Math.min(radiusKm * 18, 160)}px`, height: `${Math.min(radiusKm * 18, 160)}px` }}
-            />
-            <div className="absolute w-3 h-3 rounded-full bg-brand-500" />
-          </div>
+        {/* Google Maps radius picker */}
+        <div className="w-full h-48 rounded-xl overflow-hidden border border-border mb-4 relative">
+          <div ref={mapContainerRef} className="w-full h-full" />
+          {!mapReady && (
+            <div className="absolute inset-0 bg-brand-50 flex flex-col items-center justify-center">
+              <div className="text-4xl mb-2">🗺</div>
+              <p className="text-sm text-text-muted text-center">
+                {import.meta.env.VITE_GOOGLE_MAPS_KEY ? 'Loading map…' : 'Google Maps radius picker'}
+              </p>
+              {!import.meta.env.VITE_GOOGLE_MAPS_KEY && (
+                <p className="text-xs text-text-muted">Requires VITE_GOOGLE_MAPS_KEY</p>
+              )}
+              {/* Static circle fallback */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div
+                  className="rounded-full border-2 border-brand-500 bg-brand-500/10 transition-all duration-300"
+                  style={{ width: `${Math.min(radiusKm * 18, 160)}px`, height: `${Math.min(radiusKm * 18, 160)}px` }}
+                />
+                <div className="absolute w-3 h-3 rounded-full bg-brand-500" />
+              </div>
+            </div>
+          )}
         </div>
 
         <div>

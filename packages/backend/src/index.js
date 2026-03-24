@@ -51,6 +51,8 @@ import razorpayRoutes       from './routes/razorpay.js';
 import notifCrudRoutes      from './routes/notificationsCrud.js';
 import exportRoutes         from './routes/exports.js';
 import agreementRoutes      from './routes/agreements.js';
+import driverSelfRoutes     from './routes/drivers.js';
+import newRoutes            from './routes/newRoutes.js';
 import { initRazorpay }     from './config/razorpay.js';
 import { requestLogger }    from './middleware/requestLogger.js';
 
@@ -143,6 +145,8 @@ app.use('/api/categories',    categoriesRouter);
 app.use('/api/notifications/templates', notifCrudRoutes);
 app.use('/api/exports',       exportRoutes);
 app.use('/api/agreements',   agreementRoutes);
+app.use('/api/drivers',      driverSelfRoutes);
+app.use('/api',              newRoutes);
 
 // ─── Request logger (system logs) ────────────────────────────────────────────
 app.use(requestLogger);
@@ -167,6 +171,18 @@ async function boot() {
 
     // Initialise Socket.io (must be after connectRedis so Redis adapter can connect)
     initSocketServer(httpServer);
+
+    // ─── Dispatch polling (replaces fragile setTimeout) ──────────────────
+    try {
+      const { processExpiredOffers, processDispatchRetries } = await import('./services/dispatch.js');
+      // Check for expired offers every 5 seconds
+      setInterval(() => processExpiredOffers().catch(e => logger.error('Offer poll error', e)), 5000);
+      // Check for dispatch retries (no-driver orders) every 15 seconds
+      setInterval(() => processDispatchRetries().catch(e => logger.error('Retry poll error', e)), 15000);
+      logger.info('Dispatch polling started (offers: 5s, retries: 15s)');
+    } catch (err) {
+      logger.warn('Dispatch polling init failed:', err.message);
+    }
 
     httpServer.listen(PORT, () => {
       logger.info(`🚀  Tastr API running on port ${PORT} [${process.env.NODE_ENV}]`);

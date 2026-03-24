@@ -137,7 +137,8 @@ export async function getPendingDrivers(req, res, next) {
 // ─── PATCH /api/admin/drivers/:id/status ─────────────────────────────────────
 export async function updateDriverStatus(req, res, next) {
   try {
-    const { status, reason } = req.body;
+    const status = (req.body.status || '').toUpperCase();
+    const reason = req.body.reason;
     const driver = await Driver.findById(req.params.id);
     if (!driver) return res.status(404).json({ success: false, message: 'Driver not found' });
 
@@ -148,9 +149,13 @@ export async function updateDriverStatus(req, res, next) {
       driver.status = status;
       if (status === ENTITY_STATUS.REJECTED) {
         driver.rejectionReason = reason;
+      } else if (status === ENTITY_STATUS.SUSPENDED) {
+        driver.rejectionReason = reason;
+        driver.isOnline = false;
       } else if (status === ENTITY_STATUS.ACTIVE) {
         driver.approvedBy = req.user._id;
         driver.approvedAt = new Date();
+        driver.rejectionReason = null;
         // Also activate the user account
         await User.findByIdAndUpdate(driver.userId, { status: ENTITY_STATUS.ACTIVE });
       }
@@ -429,5 +434,68 @@ export async function adminCreateDriver(req, res, next) {
     });
 
     res.status(201).json({ success: true, driver, user: { _id: user._id, name: user.name, email: user.email, phone: user.phone } });
+  } catch (err) { next(err); }
+}
+
+// ─── GET /api/admin/drivers-all ──────────────────────────────────────────────
+export async function listAllDrivers(req, res, next) {
+  try {
+    const { page = 1, limit = 30, status, q } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const filter = {};
+
+    if (status) filter.status = status.toUpperCase();
+    
+    let drivers;
+    let total;
+
+    if (q) {
+      // Search by name/email — need to join with User
+      const userFilter = {
+        role: 'DRIVER',
+        $or: [
+          { name: { $regex: q, $options: 'i' } },
+          { email: { $regex: q, $options: 'i' } },
+          { phone: { $regex: q, $options: 'i' } },
+        ],
+      };
+      const matchingUsers = await User.find(userFilter).select('_id').lean();
+      const userIds = matchingUsers.map(u => u._id);
+      filter.userId = { $in: userIds };
+    }
+
+    [drivers, total] = await Promise.all([
+      Driver.find(filter)
+        .populate('userId', 'name email phone profilePhoto')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Driver.countDocuments(filter),
+    ]);
+
+    const pages = Math.ceil(total / parseInt(limit));
+    res.json({ success: true, drivers, total, page: parseInt(page), pages });
+  } catch (err) { next(err); }
+}
+
+// ─── GET /api/admin/drivers/:id/profile ──────────────────────────────────────
+export async function getDriverProfile(req, res, next) {
+  try {
+    const driver = await Driver.findById(req.params.id)
+      .populate('userId', 'name email phone profilePhoto status createdAt')
+      .lean();
+
+    if (!driver) return res.status(404).json({ success: false, message: 'Driver not found' });
+
+    // Fetch recent deliveries
+    const deliveries = await Order.find({ driverId: driver._id, status: 'DELIVERED' })
+      .populate('restaurantId', 'name')
+      .select('orderNumber total driverPayout tip status createdAt')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    res.json({ success: true, driver, deliveries });
   } catch (err) { next(err); }
 }

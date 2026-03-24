@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { addAddress, updateAddress } from '../../store/slices/profileSlice.js'
 import { Input, Button, Select } from '../../components/global/index.jsx'
+import loadGoogleMaps from '../../utils/loadGoogleMaps.js'
 
 const schema = z.object({
   label:    z.enum(['Home', 'Work', 'Other']),
@@ -47,13 +48,7 @@ export default function AddAddressPage() {
 
   // Load Google Maps script dynamically
   useEffect(() => {
-    const key = import.meta.env.VITE_GOOGLE_MAPS_KEY
-    if (!key || window.google?.maps) { setMapLoaded(true); return }
-    const script    = document.createElement('script')
-    script.src      = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`
-    script.async    = true
-    script.onload   = () => setMapLoaded(true)
-    document.head.appendChild(script)
+    loadGoogleMaps('places').then(loaded => setMapLoaded(loaded))
   }, [])
 
   // Initialise map once loaded

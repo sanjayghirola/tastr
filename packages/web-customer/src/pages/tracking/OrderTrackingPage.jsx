@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { connectSocket, joinOrderRoom, leaveOrderRoom, getSocket } from '../../services/socket';
 import api from '../../services/api';
+import loadGoogleMaps from '../../utils/loadGoogleMaps.js';
 
 // ─── Status milestones config ──────────────────────────────────────────────
 const MILESTONES = [
@@ -155,16 +156,10 @@ function LiveMap({ driverLocation, restaurantLocation, deliveryLocation }) {
   const driverMarker = useRef(null);
 
   useEffect(() => {
-    // Load Google Maps dynamically
-    if (!window.google && import.meta.env.VITE_GOOGLE_MAPS_KEY) {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_KEY}&libraries=geometry`;
-      script.async = true;
-      script.onload = initMap;
-      document.head.appendChild(script);
-    } else if (window.google) {
-      initMap();
-    }
+    // Load Google Maps using shared loader
+    loadGoogleMaps('geometry').then(loaded => {
+      if (loaded) initMap();
+    });
   }, []);
 
   function initMap() {
@@ -469,6 +464,20 @@ export default function OrderTrackingPage() {
             orderId={orderId}
             onChatOpen={() => setChatOpen(true)}
           />
+
+          {/* Delivery OTP — shown when driver is assigned or on the way */}
+          {order?.deliveryOtp && ['DRIVER_ASSIGNED', 'ON_WAY'].includes(status) && (
+            <div className="mx-4 mb-4 p-5 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-600"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <p className="text-xs font-bold text-amber-700 uppercase tracking-widest">Your Delivery Code</p>
+              </div>
+              <p className="text-4xl font-black text-amber-900 tracking-[0.3em] font-mono my-2">{order.deliveryOtp}</p>
+              <p className="text-xs text-amber-600">
+                Share this code with the driver when they arrive to confirm delivery.
+              </p>
+            </div>
+          )}
 
           {/* Order details */}
           <OrderDetails order={order} />

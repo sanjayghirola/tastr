@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DndContext, DragOverlay, pointerWithin, useDraggable, useDroppable } from '@dnd-kit/core';
+import { DndContext, DragOverlay, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { connectRestaurantSocket } from '../../services/socket';
 import api from '../../services/api';
 
@@ -101,109 +101,117 @@ function KitchenOrderCard({ order, onAction, isDragOverlay }) {
     opacity: isDragging ? 0.3 : 1,
   } : undefined;
 
-  const cardContent = (
-    <>
-      {/* Header */}
-      <div className={`px-3 py-2 flex items-center justify-between ${isNew ? 'bg-brand-500' : 'bg-brand-400'}`}>
-        <span className="text-white font-bold text-sm">#{order.orderId}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-white/80 text-xs">{fmtPrice(order.total)}</span>
-          <OrderTimer createdAt={order.createdAt} />
-        </div>
+  // Drag handle — header only (so buttons remain clickable)
+  const dragHeader = (
+    <div
+      className={`px-3 py-2 flex items-center justify-between ${isNew ? 'bg-brand-500' : 'bg-brand-400'} ${!isDragOverlay ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      {...(isDragOverlay ? {} : listeners)}
+      {...(isDragOverlay ? {} : attributes)}
+    >
+      <span className="text-white font-bold text-sm">#{order.orderId}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-white/80 text-xs">{fmtPrice(order.total)}</span>
+        <OrderTimer createdAt={order.createdAt} />
+      </div>
+    </div>
+  );
+
+  const cardBody = (
+    <div className="p-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-gray-500">{order.customerId?.name || 'Customer'}</p>
+        {order.prepTime && (
+          <span className="text-[10px] bg-yellow-50 text-yellow-600 px-1.5 py-0.5 rounded-full font-medium">
+            {order.prepTime}m prep
+          </span>
+        )}
       </div>
 
-      <div className="p-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-gray-500">{order.customerId?.name || 'Customer'}</p>
-          {order.prepTime && (
-            <span className="text-[10px] bg-yellow-50 text-yellow-600 px-1.5 py-0.5 rounded-full font-medium">
-              {order.prepTime}m prep
-            </span>
-          )}
-        </div>
-
-        {/* Items */}
-        <div className="space-y-1 mb-2">
-          {(expanded ? order.items : order.items?.slice(0, 3))?.map((item, i) => (
-            <div key={i} className="flex justify-between text-xs text-gray-700">
-              <span className="font-medium">{item.quantity}× {item.name}</span>
-              {item.selectedToppings?.length > 0 && (
-                <span className="text-gray-400 text-[10px]">+extras</span>
-              )}
-            </div>
-          ))}
-          {!expanded && order.items?.length > 3 && (
-            <button onClick={e => { e.stopPropagation(); setExpanded(true); }}
-              className="text-[10px] text-brand-500 underline">
-              +{order.items.length - 3} more
-            </button>
-          )}
-          {expanded && order.items?.length > 3 && (
-            <button onClick={e => { e.stopPropagation(); setExpanded(false); }}
-              className="text-[10px] text-gray-400 underline">
-              show less
-            </button>
-          )}
-        </div>
-
-        {order.customerNote && (
-          <p className="text-[10px] bg-amber-50 text-amber-600 rounded-lg px-2 py-1 mb-2">
-            📝 {order.customerNote}
-          </p>
-        )}
-
-        {order.autoAccepted && (
-          <p className="text-[10px] text-green-600 bg-green-50 rounded-lg px-2 py-0.5 mb-2 text-center font-medium">
-            ⚡ Auto-accepted
-          </p>
-        )}
-
-        {order.driverId && (
-          <div className="text-[10px] bg-purple-50 rounded-lg px-2 py-1 mb-2 flex items-center gap-1">
-            <span>🛵</span>
-            <span className="font-medium text-purple-700">
-              {typeof order.driverId === 'object' ? order.driverId.name : 'Driver assigned'}
-            </span>
-          </div>
-        )}
-
-        {/* Action buttons — only show if not a drag overlay */}
-        {!isDragOverlay && (
-          <div className="flex gap-1.5">
-            {isNew && (
-              <>
-                <button
-                  onClick={e => { e.stopPropagation(); onAction(order._id, 'reject'); }}
-                  className="flex-1 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-bold hover:bg-red-50 transition-colors"
-                >
-                  Reject
-                </button>
-                <button
-                  onClick={e => { e.stopPropagation(); onAction(order._id, 'accept'); }}
-                  className="flex-[2] py-2 rounded-xl bg-brand-500 text-white text-xs font-bold hover:bg-brand-600 transition-colors"
-                >
-                  Accept
-                </button>
-              </>
+      {/* Items */}
+      <div className="space-y-1 mb-2">
+        {(expanded ? order.items : order.items?.slice(0, 3))?.map((item, i) => (
+          <div key={i} className="flex justify-between text-xs text-gray-700">
+            <span className="font-medium">{item.quantity}× {item.name}</span>
+            {item.selectedToppings?.length > 0 && (
+              <span className="text-gray-400 text-[10px]">+extras</span>
             )}
-            {!isNew && (
+          </div>
+        ))}
+        {!expanded && order.items?.length > 3 && (
+          <button onClick={e => { e.stopPropagation(); setExpanded(true); }}
+            className="text-[10px] text-brand-500 underline">
+            +{order.items.length - 3} more
+          </button>
+        )}
+        {expanded && order.items?.length > 3 && (
+          <button onClick={e => { e.stopPropagation(); setExpanded(false); }}
+            className="text-[10px] text-gray-400 underline">
+            show less
+          </button>
+        )}
+      </div>
+
+      {order.customerNote && (
+        <p className="text-[10px] bg-amber-50 text-amber-600 rounded-lg px-2 py-1 mb-2">
+          📝 {order.customerNote}
+        </p>
+      )}
+
+      {order.autoAccepted && (
+        <p className="text-[10px] text-green-600 bg-green-50 rounded-lg px-2 py-0.5 mb-2 text-center font-medium">
+          ⚡ Auto-accepted
+        </p>
+      )}
+
+      {order.driverId && (
+        <div className="text-[10px] bg-purple-50 rounded-lg px-2 py-1 mb-2 flex items-center gap-1">
+          <span>🛵</span>
+          <span className="font-medium text-purple-700">
+            {typeof order.driverId === 'object' ? order.driverId.name : 'Driver assigned'}
+          </span>
+        </div>
+      )}
+
+      {/* Action buttons — only show if not a drag overlay */}
+      {!isDragOverlay && (
+        <div className="flex gap-1.5">
+          {isNew && (
+            <>
               <button
-                onClick={e => { e.stopPropagation(); onAction(order._id, action.api === 'status' ? action.next : action.api === 'mark-delivered' ? 'DELIVERED' : action.next); }}
-                className="w-full py-2 rounded-xl bg-brand-500 text-white text-xs font-bold hover:bg-brand-600 transition-colors"
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); onAction(order._id, 'reject'); }}
+                className="flex-1 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-bold hover:bg-red-50 transition-colors"
               >
-                {action.label}
+                Reject
               </button>
-            )}
-          </div>
-        )}
-      </div>
-    </>
+              <button
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); onAction(order._id, 'accept'); }}
+                className="flex-[2] py-2 rounded-xl bg-brand-500 text-white text-xs font-bold hover:bg-brand-600 transition-colors"
+              >
+                Accept
+              </button>
+            </>
+          )}
+          {!isNew && (
+            <button
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onAction(order._id, action.api === 'status' ? action.next : action.api === 'mark-delivered' ? 'DELIVERED' : action.next); }}
+              className="w-full py-2 rounded-xl bg-brand-500 text-white text-xs font-bold hover:bg-brand-600 transition-colors"
+            >
+              {action.label}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 
   if (isDragOverlay) {
     return (
       <div className="bg-white rounded-2xl border-2 border-brand-500 overflow-hidden shadow-2xl w-72 opacity-95">
-        {cardContent}
+        {dragHeader}
+        {cardBody}
       </div>
     );
   }
@@ -212,12 +220,11 @@ function KitchenOrderCard({ order, onAction, isDragOverlay }) {
     <div
       ref={setNodeRef}
       style={style}
-      className={`bg-white rounded-2xl border border-[#E8D9C0] overflow-hidden shadow-sm touch-none
-        ${isDragging ? 'ring-2 ring-brand-300' : 'cursor-grab active:cursor-grabbing'}`}
-      {...attributes}
-      {...listeners}
+      className={`bg-white rounded-2xl border border-[#E8D9C0] overflow-hidden shadow-sm
+        ${isDragging ? 'ring-2 ring-brand-300' : ''}`}
     >
-      {cardContent}
+      {dragHeader}
+      {cardBody}
     </div>
   );
 }
@@ -270,6 +277,11 @@ function DroppableColumn({ column, orders, onAction, activeId }) {
 export default function KitchenDisplayPage() {
   const [orders,   setOrders]   = useState([]);
   const [activeId, setActiveId] = useState(null);
+
+  // Require 8px movement before starting drag — prevents click-to-drag on buttons
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
 
   useEffect(() => {
     api.get('/orders/restaurant/active')
@@ -388,6 +400,7 @@ export default function KitchenDisplayPage() {
         </div>
 
         <DndContext
+          sensors={sensors}
           collisionDetection={pointerWithin}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}

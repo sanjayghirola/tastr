@@ -4,6 +4,7 @@ import Restaurant from '../models/Restaurant.js';
 import PromoCode from '../models/PromoCode.js';
 import Order from '../models/Order.js';
 import { ENTITY_STATUS } from '@tastr/shared';
+import { calculatePricing, calculateDeliveryFee } from '../utils/pricingEngine.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function calcSubtotal(items) {
@@ -23,13 +24,64 @@ async function getOrCreateCart(userId) {
 export async function getCart(req, res, next) {
   try {
     const cart = await Cart.findOne({ userId: req.user._id })
-      .populate('restaurantId', 'name logoUrl isOnline deliveryFee estimatedDeliveryMin minOrderAmount')
+      .populate('restaurantId', 'name logoUrl isOnline deliveryFee estimatedDeliveryMin minOrderAmount address deliveryMode deliveryRadiusKm expressDeliveryEnabled expressDeliveryExtraFee')
       .lean({ virtuals: true });
 
     if (!cart) return res.json({ success: true, cart: null });
 
-    const subtotal = calcSubtotal(cart.items);
-    res.json({ success: true, cart: { ...cart, subtotal } });
+    const restaurant = cart.restaurantId || {};
+    const baseSubtotal = calcSubtotal(cart.items);
+    const deliveryModel = restaurant.deliveryMode || 'tastr';
+
+    // ─── Calculate platform pricing (markup + service fee + commission) ──
+    const pricing = await calculatePricing({
+      itemsSubtotal: baseSubtotal,
+      deliveryFee: restaurant.deliveryFee || 0,
+      deliveryModel,
+      restaurantId: restaurant._id,
+      itemCount: cart.items.length,
+    });
+
+    // ─── Calculate delivery fee from platform tiers ─────────────────────
+    // If user has a saved address with lat/lng, use it for distance calc
+    let deliveryFeeCalc = restaurant.deliveryFee || 0;
+    const userLat = parseFloat(req.query.lat);
+    const userLng = parseFloat(req.query.lng);
+
+    if (userLat && userLng) {
+      const deliveryResult = await calculateDeliveryFee({
+        restaurantAddress: restaurant.address,
+        deliveryAddress: { lat: userLat, lng: userLng },
+        restaurantFee: restaurant.deliveryFee || 0,
+        deliveryMethod: req.query.deliveryMethod || 'standard',
+        subtotal: baseSubtotal,
+      });
+      deliveryFeeCalc = deliveryResult.deliveryFee;
+    }
+
+    res.json({
+      success: true,
+      cart: {
+        ...cart,
+        // Base subtotal (raw item prices, no markup)
+        baseSubtotal,
+        // Display subtotal (includes markup — this is what customer sees as "items total")
+        subtotal: pricing.displaySubtotal,
+        // Markup info
+        markupTotal: pricing.markupAmount,
+        markupType: pricing.markupType,
+        markupValue: pricing.markupValue,
+        // Service fee
+        serviceFee: pricing.serviceFeeAmount,
+        serviceFeeType: pricing.serviceFeeType,
+        serviceFeeValue: pricing.serviceFeeValue,
+        // Delivery fee (from platform tiers or restaurant default)
+        deliveryFee: deliveryFeeCalc,
+        // VAT
+        vatRate: 20,
+        vatAmount: Math.round(Math.max(0, pricing.displaySubtotal - (cart.promoDiscount || 0)) * 0.20),
+      },
+    });
   } catch (err) { next(err); }
 }
 

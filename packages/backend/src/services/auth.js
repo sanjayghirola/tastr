@@ -79,7 +79,7 @@ export async function verifyOtp(phone, code, purpose = 'verify') {
 }
 
 // ─── Register ─────────────────────────────────────────────────────────────────
-export async function registerUser({ name, email, phone, password }) {
+export async function registerUser({ name, email, phone, password, role }) {
   // Check uniqueness
   if (email) {
     const emailExists = await User.findOne({ email: email.toLowerCase() });
@@ -90,13 +90,19 @@ export async function registerUser({ name, email, phone, password }) {
     if (phoneExists) throw Object.assign(new Error('Phone already in use'), { code: ERROR_CODES.PHONE_TAKEN });
   }
 
+  // Determine role — only allow CUSTOMER or DRIVER from self-registration
+  const allowedSelfRoles = [ROLES.CUSTOMER, ROLES.DRIVER];
+  const finalRole = (role && allowedSelfRoles.includes(role)) ? role : ROLES.CUSTOMER;
+  // Drivers start as PENDING until docs are approved
+  const initialStatus = finalRole === ROLES.DRIVER ? ENTITY_STATUS.PENDING : ENTITY_STATUS.ACTIVE;
+
   const user = await User.create({
     name,
     email:        email?.toLowerCase(),
     phone,
     passwordHash: password, // pre-save hook hashes it
-    role:         ROLES.CUSTOMER,
-    status:       ENTITY_STATUS.ACTIVE,
+    role:         finalRole,
+    status:       initialStatus,
     referralCode: generateReferralCode(),
   });
 

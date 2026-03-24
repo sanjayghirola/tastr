@@ -1,8 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import api from '../../services/api';
 import { connectSocket } from '../../services/socket';
+
+// ─── Load Razorpay SDK ───────────────────────────────────────────────────────
+function loadRazorpaySdk() {
+  return new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true)
+    const s = document.createElement('script')
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js'
+    s.onload = () => resolve(true)
+    s.onerror = () => resolve(false)
+    document.body.appendChild(s)
+  })
+}
 
 // ─── QR Code using Google Charts API ─────────────────────────────────────────
 function QRCode({ value, size = 160 }) {
@@ -145,6 +157,7 @@ export function GroupSummaryPage() {
   const [loading,    setLoading]    = useState(true);
   const [checkingOut, setCheckingOut] = useState(false);
   const [payMethod,  setPayMethod]  = useState('CARD');
+  const [gateways,   setGateways]   = useState({ stripe: false, razorpay: false, razorpayKeyId: null });
 
   // Delivery address
   const [showAddrForm, setShowAddrForm] = useState(false);
@@ -152,7 +165,20 @@ export function GroupSummaryPage() {
   const [addrSaving, setAddrSaving] = useState(false);
 
   const userId = useSelector(state => state.auth.user?._id);
+  const user   = useSelector(state => state.auth.user);
   const userAddresses = useSelector(state => state.auth.user?.addresses || []);
+
+  // Detect available payment gateways
+  useEffect(() => {
+    api.get('/payments/gateway-status').then(r => {
+      const gw = r.data || {};
+      setGateways({ stripe: !!gw.stripe, razorpay: !!gw.razorpay, razorpayKeyId: gw.razorpayKeyId });
+      // Auto-select best available
+      if (gw.razorpay) setPayMethod('RAZORPAY');
+      else if (gw.stripe) setPayMethod('CARD');
+      else setPayMethod('WALLET');
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetchSummary();
@@ -205,6 +231,52 @@ export function GroupSummaryPage() {
     finally { setAddrSaving(false); }
   }
 
+  // ─── Razorpay checkout handler ─────────────────────────────────────────────
+  const handleRazorpayCheckout = useCallback(async (orderData) => {
+    const loaded = await loadRazorpaySdk();
+    if (!loaded) { alert('Failed to load Razorpay. Please try again.'); setCheckingOut(false); return; }
+
+    const rzpOrder = orderData.razorpayOrder;
+    const options = {
+      key: rzpOrder.key || gateways.razorpayKeyId || import.meta.env.VITE_RAZORPAY_KEY_ID,
+      amount: rzpOrder.amount,
+      currency: rzpOrder.currency,
+      name: 'Tastr',
+      description: 'Group Order Payment',
+      order_id: rzpOrder.id,
+      prefill: {
+        name: user?.name || '',
+        email: user?.email || '',
+        contact: user?.phone || '',
+      },
+      theme: { color: '#C18B3C' },
+      handler: async (response) => {
+        try {
+          await api.post('/razorpay/verify', {
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+            orderId: orderData.order._id,
+          });
+          navigate('/order-success', { state: { order: orderData.order } });
+        } catch (err) {
+          alert(err.response?.data?.message || 'Payment verification failed.');
+        }
+        setCheckingOut(false);
+      },
+      modal: {
+        ondismiss: () => { setCheckingOut(false); },
+      },
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.on('payment.failed', (resp) => {
+      alert(resp.error?.description || 'Payment failed. Please try again.');
+      setCheckingOut(false);
+    });
+    rzp.open();
+  }, [user, gateways, navigate]);
+
   async function handleCheckout() {
     if (!currentAddr) { alert('Please set a delivery address first'); return; }
     setCheckingOut(true);
@@ -213,7 +285,10 @@ export function GroupSummaryPage() {
         paymentMethod: payMethod,
         deliveryAddress: currentAddr,
       });
-      if (r.data.clientSecret) {
+      if (r.data.razorpayOrder) {
+        // Razorpay flow — open Razorpay Checkout
+        await handleRazorpayCheckout(r.data);
+      } else if (r.data.clientSecret) {
         navigate('/checkout/stripe-confirm', {
           state: { clientSecret: r.data.clientSecret, orderId: r.data.order._id, orderRef: r.data.order.orderId },
         });
@@ -338,13 +413,25 @@ export function GroupSummaryPage() {
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E8D9C0] p-4 shadow-lg">
           <div className="max-w-lg mx-auto">
             <div className="flex gap-2 mb-3">
-              {['CARD', 'WALLET'].map(m => (
-                <button key={m} onClick={() => setPayMethod(m)}
+              {gateways.razorpay && (
+                <button onClick={() => setPayMethod('RAZORPAY')}
                   className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors
-                    ${payMethod === m ? 'bg-[#C18B3C] text-white border-[#C18B3C]' : 'border-gray-200 text-gray-500'}`}>
-                  {m === 'CARD' ? '💳 Card' : '👛 Wallet'}
+                    ${payMethod === 'RAZORPAY' ? 'bg-[#C18B3C] text-white border-[#C18B3C]' : 'border-gray-200 text-gray-500'}`}>
+                  🅡 Razorpay
                 </button>
-              ))}
+              )}
+              {gateways.stripe && (
+                <button onClick={() => setPayMethod('CARD')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors
+                    ${payMethod === 'CARD' ? 'bg-[#C18B3C] text-white border-[#C18B3C]' : 'border-gray-200 text-gray-500'}`}>
+                  💳 Card
+                </button>
+              )}
+              <button onClick={() => setPayMethod('WALLET')}
+                className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors
+                  ${payMethod === 'WALLET' ? 'bg-[#C18B3C] text-white border-[#C18B3C]' : 'border-gray-200 text-gray-500'}`}>
+                👛 Wallet
+              </button>
             </div>
             <button
               onClick={handleCheckout}

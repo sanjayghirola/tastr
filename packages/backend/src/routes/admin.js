@@ -38,7 +38,7 @@ router.get('/drivers/pending',
 );
 
 router.patch('/drivers/:id/status', auditAction('UPDATE_DRIVER_STATUS', 'Driver'),
-  [param('id').isMongoId(), body('status').isIn([ENTITY_STATUS.ACTIVE, ENTITY_STATUS.REJECTED, 'REQUEST_DOCS']), body('reason').optional().isString()],
+  [param('id').isMongoId(), body('status').isIn([ENTITY_STATUS.ACTIVE, ENTITY_STATUS.REJECTED, ENTITY_STATUS.SUSPENDED, 'REQUEST_DOCS', 'active', 'rejected', 'suspended', 'request_docs']), body('reason').optional().isString()],
   validate, adminController.updateDriverStatus,
 );
 
@@ -46,6 +46,29 @@ router.post('/drivers/create',
   [body('name').notEmpty(), body('email').isEmail(), body('phone').notEmpty(), body('password').isLength({ min: 6 })],
   validate, adminController.adminCreateDriver,
 );
+
+// ─── Backward compat: driver self-service via /api/admin/drivers/... ──────────
+// These forward to the driver self-service controller for mobile app compatibility
+import * as driverSelfCtrl from '../controllers/drivers.js';
+import multer from 'multer';
+const _mem = multer.memoryStorage();
+const _driverDocUpload = multer({ storage: _mem, limits: { fileSize: 10 * 1024 * 1024 } }).fields([
+  { name: 'profilePhoto', maxCount: 1 }, { name: 'license', maxCount: 1 },
+  { name: 'vehicleInsurance', maxCount: 1 }, { name: 'insurance', maxCount: 1 },
+  { name: 'foodInsurance', maxCount: 1 }, { name: 'rightToWork', maxCount: 1 },
+  { name: 'vehiclePic', maxCount: 1 }, { name: 'id', maxCount: 1 },
+  { name: 'regCert', maxCount: 1 }, { name: 'pollutionCert', maxCount: 1 },
+  { name: 'signature', maxCount: 1 }, { name: 'panCard', maxCount: 1 },
+  { name: 'passbook', maxCount: 1 },
+]);
+router.post('/drivers/docs', (req, res, next) => {
+  _driverDocUpload(req, res, (err) => {
+    if (err) req.files = req.files || {};
+    req._filesObj = req.files || {};
+    next();
+  });
+}, driverSelfCtrl.submitDriverDocs);
+router.get('/drivers/me', driverSelfCtrl.getDriverProfile);
 
 // ─── CMS ──────────────────────────────────────────────────────────────────────
 router.get('/cms',         adminController.listCmsPages);
@@ -72,6 +95,12 @@ router.patch('/orders/:id/cancel', auditAction('CANCEL_ORDER', 'Order'), [param(
 
 // ─── Online drivers (for live map / reassign) ─────────────────────────────────
 router.get('/drivers', adminController.listDrivers);
+
+// ─── All drivers list with pagination (for drivers management page) ───────────
+router.get('/drivers-all', adminController.listAllDrivers);
+
+// ─── Driver detail profile (for driver detail page) ──────────────────────────
+router.get('/drivers/:id/profile', [param('id').isMongoId()], validate, adminController.getDriverProfile);
 
 // ─── Gift Cards ───────────────────────────────────────────────────────────────
 import {

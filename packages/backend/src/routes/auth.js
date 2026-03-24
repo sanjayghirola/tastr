@@ -50,8 +50,8 @@ router.post('/register',
   authLimiter,
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
-    body('email').optional().isEmail().normalizeEmail().withMessage('Invalid email'),
-    body('phone').optional().isMobilePhone().withMessage('Invalid phone number'),
+    body('email').optional({ values: 'falsy' }).isEmail().normalizeEmail().withMessage('Invalid email'),
+    body('phone').optional({ values: 'falsy' }).isString().withMessage('Invalid phone number'),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
     body().custom((_, { req }) => {
       if (!req.body.email && !req.body.phone) throw new Error('Email or phone is required');
@@ -126,7 +126,7 @@ router.post('/login',
 router.post('/otp/send',
   otpLimiter,
   [
-    body('phone').isMobilePhone().withMessage('Valid phone number required'),
+    body('phone').isString().notEmpty().withMessage('Valid phone number required'),
     body('purpose').isIn(['verify', 'reset', 'login']).withMessage('Invalid purpose'),
   ],
   validate,
@@ -158,7 +158,7 @@ router.post('/otp/send',
  */
 router.post('/otp/verify',
   [
-    body('phone').isMobilePhone().withMessage('Valid phone required'),
+    body('phone').isString().notEmpty().withMessage('Valid phone required'),
     body('otp').isLength({ min: 6, max: 6 }).isNumeric().withMessage('6-digit OTP required'),
     body('purpose').isIn(['verify', 'reset', 'login']).withMessage('Invalid purpose'),
   ],
@@ -176,7 +176,7 @@ router.post('/otp/verify',
  */
 router.post('/password/reset',
   [
-    body('phone').isMobilePhone().withMessage('Valid phone required'),
+    body('phone').isString().notEmpty().withMessage('Valid phone required'),
     body('newPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 chars'),
     body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP required'),
   ],

@@ -80,6 +80,13 @@ export default function DeliveryPricingPage() {
 
   const set = (key, val) => setCfg(c => ({ ...c, [key]: val }))
 
+  // Load saved delivery config from backend
+  useEffect(() => {
+    api.get('/admin/platform-config/delivery')
+      .then(r => { if (r.data?.config) setCfg(prev => ({ ...prev, ...r.data.config })) })
+      .catch(() => {}) // Uses defaults on failure
+  }, [])
+
   const setTier = (i, field, val) => {
     const tiers = [...cfg.tiers]
     tiers[i] = { ...tiers[i], [field]: Number(val) }
@@ -92,10 +99,12 @@ export default function DeliveryPricingPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      // await api.put('/admin/platform-config/delivery', cfg)
-      await new Promise(r => setTimeout(r, 600))
+      await api.put('/admin/platform-config/delivery', cfg)
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
+    } catch (err) {
+      console.error('Save failed:', err)
+      alert('Failed to save delivery pricing: ' + (err.response?.data?.message || err.message))
     } finally { setSaving(false) }
   }
 

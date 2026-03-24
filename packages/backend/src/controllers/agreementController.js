@@ -1,4 +1,5 @@
-import { Agreement, AgreementAcceptance } from '../models/Agreement.js';
+import Agreement from '../models/Agreement.js';
+import AgreementAcceptance from '../models/AgreementAcceptance.js';
 
 /**
  * GET /agreements/:type

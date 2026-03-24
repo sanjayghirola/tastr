@@ -12,7 +12,7 @@ function HeroBanner({ banners, navigate }) {
   const b = banners[idx]
   return (
     <div
-      className="relative rounded-2xl overflow-hidden h-44 md:h-56 cursor-pointer"
+      className="relative rounded-2xl overflow-hidden h-56 md:h-96 cursor-pointer"
       onClick={() => b.linkType !== 'none' && navigate(b.linkType === 'restaurant' ? `/restaurants/${b.linkValue}` : (b.linkValue || '/home'))}
     >
       <img
@@ -79,7 +79,7 @@ export default function HomePage() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-4 lg:px-8">
+      <div className="max-w-8xl mx-auto px-4 lg:px-8">
 
         {/* ─── Mobile search bar (desktop search is in header) ────────── */}
         <div className="md:hidden pt-4 pb-3">

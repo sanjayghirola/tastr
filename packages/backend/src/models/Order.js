@@ -112,6 +112,12 @@ const orderSchema = new mongoose.Schema({
   disposableEssentials: { type: Boolean, default: false },
   customerNote:    String,
 
+  // ─── Verification PINs ──────────────────────────────────────────────────
+  pickupPin:       { type: String },  // 4-digit PIN — driver enters at restaurant to collect
+  deliveryOtp:     { type: String },  // 4-digit OTP — customer gives to driver on delivery
+  pickupVerified:  { type: Boolean, default: false },
+  deliveryVerified:{ type: Boolean, default: false },
+
   // ─── Ratings (set in P6) ──────────────────────────────────────────────────
   ratings: {
     restaurant: { score: Number, comment: String, submittedAt: Date },
@@ -140,10 +146,18 @@ orderSchema.index({ driverId: 1, status: 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ orderId: 1 }, { unique: true });
 
-// Auto-generate human-readable orderId
+// Auto-generate human-readable orderId and verification PINs
 orderSchema.pre('validate', function (next) {
   if (!this.orderId) {
     this.orderId = `TAS-${nanoid(5).toUpperCase()}`;
+  }
+  // Generate 4-digit pickup PIN (restaurant shows → driver enters to collect)
+  if (!this.pickupPin) {
+    this.pickupPin = String(Math.floor(1000 + Math.random() * 9000));
+  }
+  // Generate 4-digit delivery OTP (customer receives → gives to driver)
+  if (!this.deliveryOtp) {
+    this.deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
   }
   next();
 });

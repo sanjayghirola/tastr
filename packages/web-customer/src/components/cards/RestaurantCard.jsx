@@ -6,6 +6,8 @@ const DIETARY_ICONS = { Vegan: '🌱', Vegetarian: '🥦', 'Gluten-Free': '🌾'
 export function RestaurantCard({ restaurant: r, className = '' }) {
   const navigate = useNavigate()
   const cover = r.coverPhotos?.[0]?.url
+  console.log('RestaurantCard render', r)
+  console.log('RestaurantCard cover', cover)
 
   return (
     <div
@@ -14,8 +16,8 @@ export function RestaurantCard({ restaurant: r, className = '' }) {
     >
       {/* Cover */}
       <div className="relative h-40 bg-brand-50 overflow-hidden">
-        {cover
-          ? <img src={cover} alt={r.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+        {r.logoUrl
+          ? <img src={cover ? cover : r.logoUrl} alt={r.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
           : <div className="w-full h-full flex items-center justify-center">
               {r.logoUrl ? <img src={r.logoUrl} alt={r.name} className="h-20 w-20 rounded-full object-cover opacity-70" /> : <span className="text-5xl opacity-40">🍽</span>}
             </div>}

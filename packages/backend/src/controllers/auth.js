@@ -6,9 +6,18 @@ import { ROLES, ERROR_CODES } from '@tastr/shared';
 // ─── Register ─────────────────────────────────────────────────────────────────
 export async function register(req, res, next) {
   try {
-    const { name, email, phone, password } = req.body;
-    const user = await authService.registerUser({ name, email, phone, password });
+    const { name, email, phone, password, role } = req.body;
+    const user = await authService.registerUser({ name, email, phone, password, role });
     const tokens = await authService.issueTokenPair(user);
+
+    // If driver registration, also create Driver record
+    if (user.role === 'DRIVER') {
+      const Driver = (await import('../models/Driver.js')).default;
+      const existing = await Driver.findOne({ userId: user._id });
+      if (!existing) {
+        await Driver.create({ userId: user._id, status: 'PENDING' });
+      }
+    }
 
     res.status(201).json({ success: true, user, tokens });
   } catch (err) { next(err); }

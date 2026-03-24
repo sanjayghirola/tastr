@@ -5,7 +5,8 @@ import { fetchRestaurant, fetchMenu } from '../../store/slices/restaurantsSlice.
 import { MenuItemCard } from '../../components/cards/RestaurantCard.jsx'
 import ItemModal from '../../components/modals/ItemModal.jsx'
 import { selectCartCount, selectCartItems } from '../../store/slices/cartSlice.js'
-import { ArrowLeft, Star, Clock, Bike, ChevronRight, GraduationCap } from 'lucide-react'
+import api from '../../services/api.js'
+import { ArrowLeft, Star, Clock, Bike, ChevronRight, GraduationCap, MapPin, Shield, Zap, CalendarClock, Share2 } from 'lucide-react'
 
 export default function RestaurantPage() {
   const { id }    = useParams()
@@ -18,6 +19,8 @@ export default function RestaurantPage() {
   const cartItems = useSelector(selectCartItems)
   const [activeCategory, setActiveCategory] = useState(null)
   const [selectedItem,   setSelectedItem]   = useState(null)
+  const [deliveryInfo,   setDeliveryInfo]   = useState(null)
+  const [showAllHours,   setShowAllHours]   = useState(false)
   const sectionRefs = useRef({})
 
   // Group order context — passed from GroupOrderPage join flow
@@ -32,6 +35,16 @@ export default function RestaurantPage() {
   useEffect(() => {
     if (menu.length > 0 && !activeCategory) setActiveCategory(menu[0]._id)
   }, [menu])
+
+  // Check delivery radius using user's default address
+  useEffect(() => {
+    if (!restaurant || !user) return
+    const addr = user.addresses?.find(a => a.isDefault) || user.addresses?.[0]
+    if (!addr?.lat || !addr?.lng) return
+    api.get(`/restaurants/${id}/delivery-check?lat=${addr.lat}&lng=${addr.lng}`)
+      .then(r => setDeliveryInfo(r.data))
+      .catch(() => {})
+  }, [restaurant, user, id])
 
   // Scroll spy
   useEffect(() => {
@@ -55,36 +68,129 @@ export default function RestaurantPage() {
 
   const r = restaurant
   const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity + (i.selectedToppings || []).reduce((a, t) => a + (t.price||0), 0) * i.quantity, 0)
+  const outOfRadius = deliveryInfo && !deliveryInfo.withinRadius
+  const canOrder = r.isOpenNow !== false && r.isOnline !== false && !outOfRadius
 
   return (
     <>
       <div className="min-h-screen bg-bg-page">
         {/* ─── Hero cover ─────────────────────────────────────────────────── */}
-        <div className="relative h-52 md:h-72 lg:h-80">
-          {r.coverPhotos?.[0]?.url
-            ? <img src={r.coverPhotos[0].url} alt={r.name} className="w-full h-full object-cover" />
-            : <div className="w-full h-full bg-gradient-to-br from-brand-200 to-brand-400 flex items-center justify-center text-8xl">🍽</div>}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-          <button onClick={() => navigate(-1)}
-            className="absolute top-5 left-4 lg:left-6 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors backdrop-blur-sm">
-            <ArrowLeft size={18} />
-          </button>
-          <div className="absolute bottom-5 left-4 lg:left-6 right-4 lg:right-6 text-white">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-black leading-tight">{r.name}</h1>
-                <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                  {(r.cuisines || []).map(c => (
-                    <span key={c} className="text-xs bg-white/20 px-2.5 py-0.5 rounded-full backdrop-blur-sm">{c}</span>
+        <div className="relative h-56 md:h-72 lg:h-80">
+          {r.logoUrl
+            ? <img src={r.logoUrl} alt={r.name} className="w-full h-full object-cover" />
+            : <div className="w-full h-full bg-gradient-to-br from-brand-600 via-brand-500 to-brand-300 flex items-center justify-center">
+                <span className="text-8xl opacity-30">🍽</span>
+              </div>}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/10" />
+
+          {/* Top nav */}
+          <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 lg:px-6 pt-5">
+            <button onClick={() => navigate(-1)}
+              className="w-10 h-10 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors backdrop-blur-md">
+              <ArrowLeft size={18} />
+            </button>
+            <button
+              onClick={() => navigator.share?.({ title: r.name, url: window.location.href }).catch(() => {})}
+              className="w-10 h-10 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors backdrop-blur-md">
+              <Share2 size={16} />
+            </button>
+          </div>
+
+          {/* Hero info */}
+          <div className="absolute bottom-0 left-0 right-0 px-4 lg:px-6 pb-5">
+            <div className="lg:max-w-7xl lg:mx-auto flex items-end justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <h1 className="text-2xl lg:text-3xl font-black text-white leading-tight drop-shadow-lg">{r.name}</h1>
+                <div className="flex items-center gap-2 flex-wrap mt-2">
+                  {(r.cuisines || [r.cuisineType]).filter(Boolean).map(c => (
+                    <span key={c} className="text-xs bg-white/20 px-2.5 py-1 rounded-full backdrop-blur-md text-white font-medium">{c}</span>
                   ))}
                 </div>
               </div>
               {r.logoUrl && (
-                <img src={r.logoUrl} alt="" className="w-16 h-16 rounded-2xl border-2 border-white object-cover flex-shrink-0" />
+                <img src={r.logoUrl} alt="" className="w-16 h-16 rounded-2xl border-2 border-white/80 object-cover flex-shrink-0 shadow-lg" />
               )}
             </div>
           </div>
         </div>
+
+        {/* ─── Quick info bar ─────────────────────────────────────────────── */}
+        <div className="bg-bg-card border-b border-border">
+          <div className="lg:max-w-7xl lg:mx-auto px-4 lg:px-6 py-3.5">
+            <div className="flex items-center gap-4 text-sm flex-wrap">
+              {r.avgRating > 0 && (
+                <div className="flex items-center gap-1.5 bg-yellow-50 px-2.5 py-1 rounded-xl">
+                  <Star size={13} className="text-yellow-500 fill-yellow-500" />
+                  <span className="font-bold text-yellow-700">{r.avgRating.toFixed(1)}</span>
+                  <span className="text-yellow-600/70 text-xs">({r.ratingCount || 0})</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5 text-text-secondary">
+                <Clock size={13} />
+                <span className="font-medium">{r.estimatedDeliveryMin || 30}–{(r.estimatedDeliveryMin || 30) + 10} min</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-text-secondary">
+                <Bike size={13} />
+                {r.deliveryFee === 0
+                  ? <span className="text-green-600 font-semibold">Free delivery</span>
+                  : <span className="font-medium">£{((r.deliveryFee || 250) / 100).toFixed(2)} delivery</span>}
+              </div>
+              {r.minOrderAmount > 0 && (
+                <span className="text-text-muted text-xs bg-bg-section px-2 py-0.5 rounded-lg">Min £{(r.minOrderAmount / 100).toFixed(2)}</span>
+              )}
+              <div className={`ml-auto flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-xl ${r.isOpenNow ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${r.isOpenNow ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                {r.isOpenNow ? 'Open now' : 'Closed'}
+              </div>
+            </div>
+            {r.description && <p className="text-sm text-text-secondary mt-2.5 leading-relaxed">{r.description}</p>}
+          </div>
+        </div>
+
+        {/* ─── Delivery Radius Warning ────────────────────────────────────── */}
+        {outOfRadius && (
+          <div className="bg-red-50 border-b border-red-200 px-4 py-3">
+            <div className="lg:max-w-7xl lg:mx-auto flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+                <MapPin size={16} className="text-red-500" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-red-800">Out of Delivery Range</p>
+                <p className="text-xs text-red-600 mt-0.5">
+                  Your address is {deliveryInfo.distanceKm} km away. This restaurant delivers within {deliveryInfo.deliveryRadiusKm} km.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── Delivery features pills ────────────────────────────────────── */}
+        {deliveryInfo && deliveryInfo.withinRadius && (
+          <div className="bg-bg-card border-b border-border">
+            <div className="lg:max-w-7xl lg:mx-auto px-4 lg:px-6 py-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar">
+              {deliveryInfo.distanceKm != null && (
+                <span className="flex items-center gap-1 text-xs font-medium bg-green-50 text-green-700 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  <MapPin size={11} /> {deliveryInfo.distanceKm} km away
+                </span>
+              )}
+              {deliveryInfo.expressDeliveryEnabled && (
+                <span className="flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  <Zap size={11} /> Express available
+                </span>
+              )}
+              {deliveryInfo.scheduledOrdersEnabled && (
+                <span className="flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  <CalendarClock size={11} /> Schedule orders
+                </span>
+              )}
+              {deliveryInfo.tastrPlusFreeDelivery && (
+                <span className="flex items-center gap-1 text-xs font-medium bg-brand-50 text-brand-700 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  ⭐ Free with Tastr+
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ─── Group Order Context Banner ────────────────────────────────── */}
         {groupId && (
@@ -122,72 +228,47 @@ export default function RestaurantPage() {
         )}
 
         {/* ─── Desktop two-column layout ──────────────────────────────────── */}
-        <div className="lg:flex lg:max-w-7xl lg:mx-auto lg:px-6">
+        <div className="lg:flex lg:max-w-8xl lg:mx-auto lg:px-6">
 
           {/* ─── Left: restaurant info + menu ─────────────────────────────── */}
           <div className="flex-1 min-w-0 lg:pr-6">
 
-            {/* Restaurant meta strip */}
-            <div className="bg-bg-card px-4 lg:px-0 py-4 border-b border-border-light">
-              <div className="flex items-center gap-5 text-sm text-text-secondary flex-wrap">
-                {r.avgRating > 0 && (
-                  <span className="flex items-center gap-1.5 font-semibold text-text-primary">
-                    <Star size={14} className="text-yellow-400 fill-yellow-400" />
-                    {r.avgRating.toFixed(1)}
-                    <span className="font-normal text-text-muted text-xs">({r.ratingCount || 0} reviews)</span>
-                  </span>
-                )}
-                <span className="flex items-center gap-1.5">
-                  <Clock size={14} />
-                  {r.estimatedDeliveryMin || 30}–{(r.estimatedDeliveryMin || 30) + 10} min
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Bike size={14} />
-                  {r.deliveryFee === 0 ? <span className="text-green-600 font-semibold">Free delivery</span> : `£${((r.deliveryFee || 250) / 100).toFixed(2)} delivery`}
-                </span>
-                {r.minOrderAmount > 0 && <span className="text-text-muted">Min £{(r.minOrderAmount / 100).toFixed(2)}</span>}
-              </div>
-              {r.description && <p className="text-sm text-text-secondary mt-2 leading-relaxed">{r.description}</p>}
-              <div className={`mt-2 text-xs font-semibold inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${r.isOpenNow ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${r.isOpenNow ? 'bg-green-500' : 'bg-red-500'}`} />
-                {r.isOpenNow ? 'Open now' : 'Closed'}
-                {!r.isOpenNow && r.todayHours?.open && ` · Opens ${r.todayHours.open}`}
-              </div>
-            </div>
+            {/* ─── Restaurant Details (Location, Hours, Compliance) ──────── */}
+            <div className="bg-bg-card px-4 lg:px-3 py-5 border-b border-border-light">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-            {/* ─── Restaurant Details (Location, Hours, Licence) ─────────── */}
-            <div className="bg-bg-card px-4 lg:px-0 py-4 border-b border-border-light space-y-4">
-              {/* Location */}
-              {r.address && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-brand-600"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-text-primary uppercase tracking-wide">Location</p>
-                    <p className="text-sm text-text-secondary mt-0.5">{r.address.line1}</p>
-                    <p className="text-sm text-text-muted">{[r.address.city, r.address.postcode].filter(Boolean).join(', ')}</p>
+                {/* Location card */}
+                {r.address && (
+                  <div className="bg-bg-section rounded-2xl p-4 border border-border">
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center">
+                        <MapPin size={13} className="text-brand-600" />
+                      </div>
+                      <p className="text-xs font-bold text-text-primary uppercase tracking-wide">Location</p>
+                    </div>
+                    <p className="text-sm text-text-primary font-medium">{r.address.line1 || r.address.streetAddress}</p>
+                    <p className="text-xs text-text-muted mt-0.5">{[r.address.city, r.address.postcode].filter(Boolean).join(', ')}</p>
                     {r.address.lat && (
                       <a href={`https://maps.google.com/?q=${r.address.lat},${r.address.lng}`} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-brand-500 font-semibold mt-1 inline-block hover:underline">
-                        View on map →
+                        className="text-xs text-brand-500 font-semibold mt-2 inline-flex items-center gap-1 hover:underline">
+                        View on map <ChevronRight size={12} />
                       </a>
                     )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Opening Hours */}
-              {r.openingHours?.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Clock size={14} className="text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-xs font-bold text-text-primary uppercase tracking-wide">Opening Hours</p>
-                    <div className="mt-1 space-y-0.5">
-                      {r.openingHours.map((h, i) => (
-                        <div key={i} className="flex justify-between text-sm">
+                {/* Hours card */}
+                {r.openingHours?.length > 0 && (
+                  <div className="bg-bg-section rounded-2xl p-4 border border-border">
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
+                        <Clock size={13} className="text-blue-600" />
+                      </div>
+                      <p className="text-xs font-bold text-text-primary uppercase tracking-wide">Hours</p>
+                    </div>
+                    <div className="space-y-0.5">
+                      {(showAllHours ? r.openingHours : r.openingHours.slice(0, 3)).map((h, i) => (
+                        <div key={i} className="flex justify-between text-xs">
                           <span className={`font-medium ${h.isOpen ? 'text-text-primary' : 'text-text-muted'}`}>{h.day}</span>
                           <span className={h.isOpen ? 'text-text-secondary' : 'text-text-muted'}>
                             {h.isOpen ? `${h.open} – ${h.close}` : 'Closed'}
@@ -195,46 +276,53 @@ export default function RestaurantPage() {
                         </div>
                       ))}
                     </div>
+                    {r.openingHours.length > 3 && (
+                      <button onClick={() => setShowAllHours(v => !v)}
+                        className="text-xs text-brand-500 font-semibold mt-1.5 hover:underline">
+                        {showAllHours ? 'Show less' : `Show all ${r.openingHours.length} days`}
+                      </button>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Food Hygiene & Licence */}
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-600"><path d="M9 12l2 2 4-4"/><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/></svg>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-text-primary uppercase tracking-wide">Food Safety & Compliance</p>
+                {/* Compliance card */}
+                <div className="bg-bg-section rounded-2xl p-4 border border-border">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center">
+                      <Shield size={13} className="text-green-600" />
+                    </div>
+                    <p className="text-xs font-bold text-text-primary uppercase tracking-wide">Safety</p>
+                  </div>
                   {r.foodHygieneRating != null && (
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-sm font-semibold text-text-primary">Hygiene Rating:</span>
-                      <span className="px-2 py-0.5 bg-green-50 text-green-700 text-xs font-bold rounded-lg border border-green-200">{r.foodHygieneRating}/5</span>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-xs text-text-secondary">Hygiene:</span>
+                      <div className="flex items-center gap-0.5">
+                        {[1,2,3,4,5].map(n => (
+                          <div key={n} className={`w-4 h-4 rounded-sm text-[9px] font-bold flex items-center justify-center
+                            ${n <= r.foodHygieneRating ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
+                            {n}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
-                  {r.fhrsNumber && (
-                    <p className="text-xs text-text-muted mt-0.5">FHRS: {r.fhrsNumber}</p>
-                  )}
-                  {r.companyRegNumber && (
-                    <p className="text-xs text-text-muted mt-0.5">Company Reg: {r.companyRegNumber}</p>
-                  )}
-                  {r.vatNumber && (
-                    <p className="text-xs text-text-muted mt-0.5">VAT: {r.vatNumber}</p>
-                  )}
+                  {r.fhrsNumber && <p className="text-xs text-text-muted">FHRS: {r.fhrsNumber}</p>}
+                  {r.companyRegNumber && <p className="text-xs text-text-muted">Reg: {r.companyRegNumber}</p>}
+                  {r.vatNumber && <p className="text-xs text-text-muted">VAT: {r.vatNumber}</p>}
                   {!r.foodHygieneRating && !r.fhrsNumber && !r.companyRegNumber && (
-                    <p className="text-xs text-text-muted mt-0.5">Registered food business</p>
+                    <p className="text-xs text-text-muted">Registered food business</p>
                   )}
                 </div>
               </div>
             </div>
 
             {/* Sticky category nav */}
-            <div className="sticky top-0 z-20 bg-bg-card border-b border-border-light overflow-x-auto no-scrollbar">
-              <div className="flex gap-1 px-4 lg:px-0 py-2">
+            <div className="sticky px-3 top-0 z-20 bg-bg-card border-b border-border-light shadow-sm">
+              <div className="flex gap-1 px-4 lg:px-0 py-2.5 overflow-x-auto no-scrollbar">
                 {menu.map(cat => (
                   <button key={cat._id} onClick={() => scrollToCategory(cat._id)}
                     className={`px-4 py-1.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0
-                      ${activeCategory === cat._id ? 'bg-brand-500 text-white' : 'text-text-secondary hover:bg-bg-section hover:text-text-primary'}`}>
+                      ${activeCategory === cat._id ? 'bg-brand-500 text-white shadow-sm' : 'text-text-secondary hover:bg-bg-section hover:text-text-primary'}`}>
                     {cat.name}
                   </button>
                 ))}
@@ -252,13 +340,19 @@ export default function RestaurantPage() {
                   <div key={cat._id} ref={el => { sectionRefs.current[cat._id] = el }} data-cat-id={cat._id} className="pt-7">
                     <h2 className="text-lg font-black text-text-primary mb-4">{cat.name}</h2>
                     {/* 2-column grid on medium+ */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 ${outOfRadius ? 'opacity-50 pointer-events-none' : ''}`}>
                       {cat.items.map(item => (
-                        <MenuItemCard key={item._id} item={item} restaurantId={r._id} restaurantName={r.name} onClick={setSelectedItem} />
+                        <MenuItemCard key={item._id} item={item} restaurantId={r._id} restaurantName={r.name} onClick={outOfRadius ? undefined : setSelectedItem} />
                       ))}
                     </div>
                   </div>
                 ))
+              )}
+              {outOfRadius && menu.length > 0 && (
+                <div className="mt-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-center">
+                  <p className="text-sm font-semibold text-red-800">You are outside this restaurant's delivery area</p>
+                  <p className="text-xs text-red-600 mt-1">Browse the menu, but ordering is not available for your current address.</p>
+                </div>
               )}
             </div>
           </div>
@@ -322,7 +416,6 @@ export default function RestaurantPage() {
         </div>
 
         {/* ─── Mobile: floating cart button ─────────────────────────────── */}
-        {/* Bottom bar — group order view or personal cart */}
         {groupId ? (
           <div className="lg:hidden fixed bottom-20 left-4 right-4 z-30">
             <button onClick={() => navigate(`/group/${groupId}/summary`)}
@@ -345,7 +438,7 @@ export default function RestaurantPage() {
       </div>
 
       {selectedItem && (
-        <ItemModal item={selectedItem} restaurant={r} onClose={() => setSelectedItem(null)} isRestaurantOpen={r.isOpenNow !== false && r.isOnline !== false} groupId={groupId} />
+        <ItemModal item={selectedItem} restaurant={r} onClose={() => setSelectedItem(null)} isRestaurantOpen={canOrder} groupId={groupId} />
       )}
     </>
   )

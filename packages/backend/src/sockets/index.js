@@ -1,13 +1,41 @@
 import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
-import jwt from 'jsonwebtoken';
 import { getRedis } from '../config/redis.js';
 import { logger } from '../utils/logger.js';
+import { verifyAccessToken } from '../services/auth.js';
 import { registerOrderHandlers } from './orderHandlers.js';
 import { registerDriverHandlers } from './driverHandlers.js';
 import { registerChatHandlers } from './chatHandlers.js';
 
 let io;
+
+/**
+ * Socket auth middleware — verifies JWT and extracts user info.
+ *
+ * FIXED: Uses verifyAccessToken (JWT_ACCESS_SECRET) instead of JWT_SECRET.
+ * FIXED: Maps JWT 'sub' field → 'id' for all socket handlers.
+ */
+function socketAuthMiddleware(socket, next) {
+  const token =
+    socket.handshake.auth?.token ||
+    socket.handshake.headers?.authorization?.replace('Bearer ', '');
+
+  if (!token) return next(new Error('Authentication required'));
+
+  try {
+    const decoded = verifyAccessToken(token);
+    // JWT payload is { sub, role, iat, exp }
+    // Map to { id, role } for consistent access across all handlers
+    socket.user = {
+      id:   decoded.sub,
+      role: decoded.role,
+    };
+    next();
+  } catch (err) {
+    logger.warn(`Socket auth failed: ${err.message}`);
+    next(new Error('Invalid token'));
+  }
+}
 
 export function initSocketServer(httpServer) {
   io = new Server(httpServer, {
@@ -19,7 +47,7 @@ export function initSocketServer(httpServer) {
     transports: ['websocket', 'polling'],
   });
 
-  // ─── Redis pub/sub adapter for multi-instance (ioredis) ────────────────
+  // ─── Redis pub/sub adapter for multi-instance ──────────────────────────
   try {
     const pubClient = getRedis().duplicate();
     const subClient = getRedis().duplicate();
@@ -29,47 +57,22 @@ export function initSocketServer(httpServer) {
     logger.error('Socket.io Redis adapter error', err);
   }
 
-  // ─── Auth middleware ─────────────────────────────────────────────────────
-  io.use((socket, next) => {
-    const token =
-      socket.handshake.auth?.token ||
-      socket.handshake.headers?.authorization?.replace('Bearer ', '');
+  // ─── Auth middleware — root namespace ───────────────────────────────────
+  io.use(socketAuthMiddleware);
 
-    if (!token) return next(new Error('Authentication required'));
-
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      socket.user = decoded; // { id, role }
-      next();
-    } catch {
-      next(new Error('Invalid token'));
-    }
-  });
-
-  // ─── Namespaces ──────────────────────────────────────────────────────────
-  const customerNs  = io.of('/customer');
+  // ─── Namespaces ────────────────────────────────────────────────────────
+  const customerNs   = io.of('/customer');
   const restaurantNs = io.of('/restaurant');
-  const driverNs    = io.of('/driver');
+  const driverNs     = io.of('/driver');
 
-  // Apply auth middleware to namespaces too
+  // Apply same auth middleware to all namespaces
   [customerNs, restaurantNs, driverNs].forEach(ns => {
-    ns.use((socket, next) => {
-      const token =
-        socket.handshake.auth?.token ||
-        socket.handshake.headers?.authorization?.replace('Bearer ', '');
-      if (!token) return next(new Error('Authentication required'));
-      try {
-        socket.user = jwt.verify(token, process.env.JWT_SECRET);
-        next();
-      } catch {
-        next(new Error('Invalid token'));
-      }
-    });
+    ns.use(socketAuthMiddleware);
   });
 
-  // ─── Root namespace connections ──────────────────────────────────────────
+  // ─── Root namespace connections ────────────────────────────────────────
   io.on('connection', socket => {
-    logger.info(`Socket connected: ${socket.id} user=${socket.user?.id}`);
+    logger.info(`Socket connected: ${socket.id} user=${socket.user?.id} role=${socket.user?.role}`);
     registerOrderHandlers(io, socket);
     registerChatHandlers(io, socket);
 
@@ -78,15 +81,15 @@ export function initSocketServer(httpServer) {
     });
   });
 
-  // ─── Driver namespace ────────────────────────────────────────────────────
+  // ─── Driver namespace ──────────────────────────────────────────────────
   driverNs.on('connection', socket => {
-    logger.info(`Driver socket connected: ${socket.id} driver=${socket.user?.id}`);
+    logger.info(`Driver socket connected: ${socket.id} userId=${socket.user?.id}`);
     registerDriverHandlers(io, driverNs, socket);
   });
 
-  // ─── Restaurant namespace ─────────────────────────────────────────────────
+  // ─── Restaurant namespace ──────────────────────────────────────────────
   restaurantNs.on('connection', socket => {
-    const restaurantId = socket.user?.restaurantId || socket.handshake.query?.restaurantId;
+    const restaurantId = socket.handshake.query?.restaurantId;
     if (restaurantId) {
       socket.join(`restaurant:${restaurantId}`);
       logger.info(`Restaurant ${restaurantId} joined namespace`);

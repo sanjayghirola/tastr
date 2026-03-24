@@ -56,6 +56,17 @@ router.get('/:id/menu',
 );
 
 /**
+ * GET /api/restaurants/:id/delivery-check?lat=XX&lng=XX
+ * Check if customer location is within delivery radius and return available delivery methods
+ */
+router.get('/:id/delivery-check',
+  (req, res, next) => MONGO_ID_RE.test(req.params.id) ? next() : next('route'),
+  [param('id').isMongoId(), query('lat').isFloat(), query('lng').isFloat()],
+  validate,
+  ctrl.deliveryCheck,
+);
+
+/**
  * PATCH /api/restaurants/:id/online
  */
 router.patch('/:id/online',
