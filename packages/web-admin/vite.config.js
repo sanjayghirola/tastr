@@ -13,11 +13,11 @@ export default defineConfig({
     port: 3002,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'https://api.theeazy.io',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:8000',
+        target: 'https://api.theeazy.io',
         changeOrigin: true,
         ws: true,
       },

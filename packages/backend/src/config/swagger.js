@@ -11,7 +11,7 @@ const options = {
     },
     servers: [
       { url: 'http://localhost:8000', description: 'Development' },
-      { url: 'https://api.tastr.app', description: 'Production' },
+      { url: 'https://api.theeazy.io', description: 'Production' },
     ],
     components: {
       securitySchemes: {
